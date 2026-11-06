@@ -30,7 +30,9 @@ def get_weather_info( city: str):
     return "Something went wrong while fetching the weather information. Please try again later."
 
 
-
+available_tools = {
+    "get_weather_info": get_weather_info
+}
 
 SYSTEM_PROMPT = """
     you are an expert AI assistant in resolving user queries using chain of thought.
@@ -112,13 +114,11 @@ while True:
         tool_name = parsed_result.get("tool")
         tool_input = parsed_result.get("input")
         
-        # tool_response = 
-        
-        if tool_name == "get_weather_info":
-            tool_output = get_weather_info(tool_input)
-            message_history.append({"role": "assistant", "content": json.dumps({ "step": "OBSERVE", "Tool": tool_name, "output": tool_output })})
-            print("Tool Output:", tool_output)
-            continue
+        tool_response = available_tools[tool_name](tool_input)
+        message_history.append({"role": "developer", "content": json.dumps(
+            { "step": "OBSERVE", "tool": tool_name, "input": tool_input,"output": tool_response }
+        )})
+        continue
     
     if parsed_result.get("step") == "PLAN":
         print("Planning", parsed_result.get("content"))
