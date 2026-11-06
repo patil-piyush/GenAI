@@ -4,7 +4,7 @@ import os
 import json
 import requests
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import Optional
 
 
 load_dotenv()
@@ -33,7 +33,7 @@ def get_weather_info( city: str):
 
 
 available_tools = {
-    "get_weather_info": get_weather_info
+    "get_weather_info": get_weather_info,
 }
 
 SYSTEM_PROMPT = """
@@ -51,12 +51,11 @@ SYSTEM_PROMPT = """
     
     
     Output JSON Format:
-    { "step": "START/PLAN/OUTPUT/TOOL", "content": "string", "Tool": "string", "Input": "string" }
+    { "step": "START/PLAN/OUTPUT/TOOL", "content": "string", "tool": "string", "input": "string" }
     
     
     Available Tools:
-    1. get_weather_info(city: str) -> str : This tool can be used to get the weather information of any city. It takes a city name as input and returns the weather information of that city.
-        
+    1. get_weather_info(city: str) : This tool can be used to get the weather information of any city. It takes a city name as input and returns the weather information of that city.
     Example 1:
     START: Hey, can you solve 2 + 3 * 5 / 10
     PLAN: { "step": "PLAN", "content": "Seems like user is interested in math problem" }
@@ -84,7 +83,7 @@ SYSTEM_PROMPT = """
 """
 
 
-print("\n\n\n\n")
+print("\n")
 
 
 class myOutputFormat(BaseModel):
@@ -97,45 +96,67 @@ message_history = [
     { "role": "system", "content": SYSTEM_PROMPT },
 ]
 
-
-user_query = input("👦 ->> ")
-message_history.append({ "role": "user", "content": user_query})
-
-
 while True:
-    response = client.chat.completions.parse(
-        model="gemini-2.5-flash",
-        response_format=myOutputFormat,
-        messages= message_history
-    )
-    
-    raw_result = response.choices[0].message.parsed
-    message_history.append({"role": "assistant", "content": raw_result})
-    
-    parsed_result = response.choices[0].message.parsed
-    
-    if parsed_result.step == "START":
-        print("starting LLM", parsed_result.content)
-        continue
-    
-    if parsed_result.step == "TOOL":
-        print("Calling Tool", parsed_result.tool, "with input", parsed_result.input)
-        tool_name = parsed_result.tool
-        tool_input = parsed_result.input
+    user_query = input("👦 ->> ")
+    message_history.append({ "role": "user", "content": user_query})
+
+
+    while True:
+        # response = client.chat.completions.parsed(
+        #     model="gemini-2.5-flash",
+        #     response_format=myOutputFormat,
+        #     messages= message_history
+        # )
         
-        tool_response = available_tools[tool_name](tool_input)
-        message_history.append({"role": "developer", "content": json.dumps(
-            { "step": "OBSERVE", "tool": tool_name, "input": tool_input,"output": tool_response }
-        )})
-        continue
-    
-    if parsed_result.step == "PLAN":
-        print("Planning", parsed_result.content)
-        continue
-    
-    if parsed_result.step == "OUTPUT":
-        print("\n🤖 ->> ", parsed_result.content)
-        break
+        from openai import BadRequestError
+
+        try:
+            response = client.chat.completions.parse(
+                model="gemini-2.5-flash",
+                messages=message_history,
+                response_format={"type": "json_object"}
+            )
+        except BadRequestError as e:
+            print("API ERROR:", e)
+            print("ERROR DETAILS:", e.response.text)
+            raise
+        
+        # raw_result = response.choices[0].message.parsed
+        # message_history.append({"role": "assistant", "content": raw_result})
+        
+        raw_result = response.choices[0].message.content
+
+        parsed_result = myOutputFormat.model_validate_json(raw_result)
+
+        message_history.append({
+            "role": "assistant",
+            "content": raw_result
+        })
+        
+        # parsed_result = response.choices[0].message.parsed
+        
+        if parsed_result.step == "START":
+            print("starting LLM", parsed_result.content)
+            continue
+        
+        if parsed_result.step == "TOOL":
+            print("Calling Tool", parsed_result.tool, "with input", parsed_result.input)
+            tool_name = parsed_result.tool
+            tool_input = parsed_result.input
+            
+            tool_response = available_tools[tool_name](tool_input)
+            message_history.append({"role": "developer", "content": json.dumps(
+                { "step": "OBSERVE", "tool": tool_name, "input": tool_input,"output": tool_response }
+            )})
+            continue
+        
+        if parsed_result.step == "PLAN":
+            print("Planning", parsed_result.content)
+            continue
+        
+        if parsed_result.step == "OUTPUT":
+            print("\n🤖 ->> ", parsed_result.content)
+            break
 
 
 
