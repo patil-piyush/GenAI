@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 import os
 import json
 import requests
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 
 
 load_dotenv()
@@ -84,6 +86,13 @@ SYSTEM_PROMPT = """
 
 print("\n\n\n\n")
 
+
+class myOutputFormat(BaseModel):
+    step: str = Field(..., description="The step of the process: START, PLAN, OUTPUT, TOOL")
+    content: Optional[str] = Field(None, description="The Optional string content for the step")
+    tool: Optional[str] = Field(None, description="The ID of the tool to be called")
+    input: Optional[str] = Field(None, description="The input params for the tool to be called")
+
 message_history = [
     { "role": "system", "content": SYSTEM_PROMPT },
 ]
@@ -94,25 +103,25 @@ message_history.append({ "role": "user", "content": user_query})
 
 
 while True:
-    response = client.chat.completions.create(
+    response = client.chat.completions.parse(
         model="gemini-2.5-flash",
-        response_format={"type": "json_object"},
+        response_format=myOutputFormat,
         messages= message_history
     )
     
-    raw_result = response.choices[0].message.content
+    raw_result = response.choices[0].message.parsed
     message_history.append({"role": "assistant", "content": raw_result})
     
-    parsed_result = json.loads(raw_result)
+    parsed_result = response.choices[0].message.parsed
     
-    if parsed_result.get("step") == "START":
-        print("starting LLM", parsed_result.get("content"))
+    if parsed_result.step == "START":
+        print("starting LLM", parsed_result.content)
         continue
     
-    if parsed_result.get("step") == "TOOL":
-        print("Calling Tool", parsed_result.get("tool"), "with input", parsed_result.get("input"))
-        tool_name = parsed_result.get("tool")
-        tool_input = parsed_result.get("input")
+    if parsed_result.step == "TOOL":
+        print("Calling Tool", parsed_result.tool, "with input", parsed_result.input)
+        tool_name = parsed_result.tool
+        tool_input = parsed_result.input
         
         tool_response = available_tools[tool_name](tool_input)
         message_history.append({"role": "developer", "content": json.dumps(
@@ -120,12 +129,12 @@ while True:
         )})
         continue
     
-    if parsed_result.get("step") == "PLAN":
-        print("Planning", parsed_result.get("content"))
+    if parsed_result.step == "PLAN":
+        print("Planning", parsed_result.content)
         continue
     
-    if parsed_result.get("step") == "OUTPUT":
-        print("\n🤖 ->> ", parsed_result.get("content"))
+    if parsed_result.step == "OUTPUT":
+        print("\n🤖 ->> ", parsed_result.content)
         break
 
 
